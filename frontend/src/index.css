@@ -1,0 +1,18 @@
+
+body {
+    margin: 0;
+    min-width: 320px;
+    background-color: #f8f9fa;
+}
+
+.sidebar-link {
+    transition: background-color 0.2s ease;
+}
+
+.sidebar-link:hover {
+    background-color: #343a40;
+}
+
+button:disabled {
+    cursor: not-allowed;
+}
