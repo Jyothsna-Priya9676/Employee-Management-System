@@ -14,11 +14,10 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../context/authContext";
 import "./Login.css";
-
 const API_URL = (
     import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api"
-).replace(/\/$/, "");
-
+).replace(/\/+$/, "");
+console.log("HRMS API BASE URL:", API_URL);
 const MODEL_URL = "/models";
 
 const Login = () => {
