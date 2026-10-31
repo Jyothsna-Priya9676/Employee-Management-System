@@ -3,7 +3,6 @@ import express from "express";
 import cors from "cors";
 
 import connectToDatabase from "./db/db.js";
-import resetAdminPassword from "./resetAdminPassword.js";
 
 import authRouter from "./routes/auth.js";
 import employeeRouter from "./routes/employee.js";
@@ -22,10 +21,10 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "EMS API is running",
-  });
+    res.json({
+        success: true,
+        message: "EMS API is running",
+    });
 });
 
 app.use("/api/auth", authRouter);
@@ -40,29 +39,25 @@ app.use("/api/face", faceRoutes);
 app.use("/api/payroll", payrollRoutes);
 
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: "API endpoint not found",
-  });
+    res.status(404).json({
+        success: false,
+        error: "API endpoint not found",
+    });
 });
 
 const startServer = async () => {
-  try {
-    // Connect to the production HRMS database
-    await connectToDatabase();
+    try {
+        await connectToDatabase();
 
-    // Temporarily reset the admin password
-    await resetAdminPassword();
+        const PORT = process.env.PORT || 3000;
 
-    const PORT = process.env.PORT || 3000;
-
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error("Unable to start server:", error.message);
-    process.exit(1);
-  }
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("Unable to start server:", error.message);
+        process.exit(1);
+    }
 };
 
 startServer();
