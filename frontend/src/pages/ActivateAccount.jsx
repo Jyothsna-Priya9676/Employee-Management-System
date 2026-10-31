@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-const API_URL = "http://localhost:3000/api";
-
+const API_URL =
+    import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 function ActivateAccount() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();

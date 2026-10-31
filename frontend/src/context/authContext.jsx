@@ -12,8 +12,7 @@ import { useNavigate } from "react-router-dom";
 const userContext = createContext(null);
 
 const API_URL = (
-    import.meta.env.VITE_API_URL || "http://localhost:3000/api"
-).replace(/\/+$/, "");
+import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api").replace(/\/+$/, "");
 
 const AuthContext = ({ children }) => {
     const [user, setUser] = useState(null);
