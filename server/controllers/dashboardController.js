@@ -14,12 +14,10 @@ export const getDashboardSummary = async (req, res) => {
         ] = await Promise.all([
             Employee.countDocuments(),
             Department.countDocuments(),
-
             Employee.aggregate([
                 {
                     $group: {
                         _id: null,
-
                         activeEmployees: {
                             $sum: {
                                 $cond: [
@@ -29,7 +27,6 @@ export const getDashboardSummary = async (req, res) => {
                                 ]
                             }
                         },
-
                         inactiveEmployees: {
                             $sum: {
                                 $cond: [
@@ -39,7 +36,6 @@ export const getDashboardSummary = async (req, res) => {
                                 ]
                             }
                         },
-
                         monthlySalary: {
                             $sum: {
                                 $cond: [
@@ -49,7 +45,6 @@ export const getDashboardSummary = async (req, res) => {
                                 ]
                             }
                         },
-
                         averageSalary: {
                             $avg: "$salary"
                         }
@@ -130,6 +125,10 @@ export const getDepartmentBreakdown = async (req, res) => {
 };
 
 
+/**
+ * GET /api/dashboard/attendance-trends?months=6
+ * Monthly attendance records and completion statistics.
+ */
 
 /**
  * GET /api/dashboard/attendance-trends?months=6
@@ -140,30 +139,58 @@ export const getAttendanceTrends = async (req, res) => {
         const requestedMonths = Number(req.query.months) || 6;
         const months = Math.min(12, Math.max(1, requestedMonths));
 
-        // Start at the beginning of the month, N months ago.
         const now = new Date();
+
         const startDate = new Date(
             now.getFullYear(),
             now.getMonth() - months + 1,
             1
         );
 
+        const startMonthKey = [
+            startDate.getFullYear(),
+            String(startDate.getMonth() + 1).padStart(2, "0"),
+            "01"
+        ].join("-");
+
         const trends = await Attendance.aggregate([
             {
                 $match: {
-                    dateKey: {
-                        $gte: [
-                            startDate.getFullYear(),
-                            String(startDate.getMonth() + 1).padStart(2, "0"),
-                            "01"
-                        ].join("-")
+                    dateKey: { $gte: startMonthKey }
+                }
+            },
+            {
+                $addFields: {
+                    month: { $substrBytes: ["$dateKey", 0, 7] },
+                    isCompleted: {
+                        $and: [
+                            { $ne: ["$checkOut", null] },
+                            { $ne: [{ $ifNull: ["$checkIn", null] }, null] },
+                            { $gt: ["$checkOut", "$checkIn"] }
+                        ]
                     }
                 }
             },
             {
                 $addFields: {
-                    month: {
-                        $substrBytes: ["$dateKey", 0, 7]
+                    calculatedDurationMinutes: {
+                        $cond: [
+                            "$isCompleted",
+                            {
+                                $floor: {
+                                    $divide: [
+                                        {
+                                            $subtract: [
+                                                "$checkOut",
+                                                "$checkIn"
+                                            ]
+                                        },
+                                        60000
+                                    ]
+                                }
+                            },
+                            null
+                        ]
                     }
                 }
             },
@@ -172,25 +199,13 @@ export const getAttendanceTrends = async (req, res) => {
                     _id: "$month",
                     totalRecords: { $sum: 1 },
                     completed: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ["$status", "Completed"] },
-                                1,
-                                0
-                            ]
-                        }
+                        $sum: { $cond: ["$isCompleted", 1, 0] }
                     },
                     inProgress: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ["$status", "Present"] },
-                                1,
-                                0
-                            ]
-                        }
+                        $sum: { $cond: ["$isCompleted", 0, 1] }
                     },
                     averageDurationMinutes: {
-                        $avg: "$durationMinutes"
+                        $avg: "$calculatedDurationMinutes"
                     }
                 }
             },
@@ -212,10 +227,39 @@ export const getAttendanceTrends = async (req, res) => {
             }
         ]);
 
+        const trendsByMonth = new Map(
+            trends.map((item) => [item.month, item])
+        );
+
+        const completeTrends = [];
+
+        for (let offset = months - 1; offset >= 0; offset--) {
+            const date = new Date(
+                now.getFullYear(),
+                now.getMonth() - offset,
+                1
+            );
+
+            const monthKey = [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, "0")
+            ].join("-");
+
+            completeTrends.push(
+                trendsByMonth.get(monthKey) || {
+                    month: monthKey,
+                    totalRecords: 0,
+                    completed: 0,
+                    inProgress: 0,
+                    averageDurationMinutes: 0
+                }
+            );
+        }
+
         return res.status(200).json({
             success: true,
             months,
-            trends
+            trends: completeTrends
         });
     } catch (error) {
         console.error("getAttendanceTrends:", error);
@@ -226,6 +270,7 @@ export const getAttendanceTrends = async (req, res) => {
         });
     }
 };
+
 
 
 /**
@@ -276,7 +321,7 @@ export const getLeaveStatistics = async (req, res) => {
             success: true,
             totalLeaves,
             byStatus,
-            byType: typeStats.map(item => ({
+            byType: typeStats.map((item) => ({
                 leaveType: item._id,
                 count: item.count
             }))

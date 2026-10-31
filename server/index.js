@@ -11,6 +11,8 @@ import attendanceRouter from "./routes/attendance.js";
 import leaveRouter from "./routes/leave.js";
 import aiRouter from "./routes/ai.js";
 import hrPolicyRouter from "./routes/hrPolicy.js";
+import faceRoutes from "./routes/face.js";
+import payrollRoutes from "./routes/payrollRoutes.js";
 const app = express();
 
 app.use(cors());
@@ -28,6 +30,8 @@ app.use("/api/attendance", attendanceRouter);
 app.use("/api/leaves", leaveRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/hr-policies", hrPolicyRouter);
+app.use("/api/face", faceRoutes);
+app.use("/api/payroll", payrollRoutes);
 app.use((req, res) => {
   res.status(404).json({
     success: false,

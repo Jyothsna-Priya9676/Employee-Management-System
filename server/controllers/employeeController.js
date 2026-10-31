@@ -1,12 +1,13 @@
 
 import mongoose from "mongoose";
+
 import Employee from "../models/Employee.js";
 import Department from "../models/Department.js";
 
 const validStatuses = ["Active", "Inactive"];
 
 // GET /api/employees
-// Search, filter, sort and paginate employees
+// Search, filter, sort and paginate employees.
 export const getEmployees = async (req, res) => {
     try {
         const {
@@ -36,14 +37,12 @@ export const getEmployees = async (req, res) => {
             : "createdAt";
 
         const sortOrder = order === "asc" ? 1 : -1;
-
         const filter = {};
 
-        if (search.trim()) {
-            const escapedSearch = search.trim().replace(
-                /[.*+?^${}()|[\]\\]/g,
-                "\\$&"
-            );
+        if (typeof search === "string" && search.trim()) {
+            const escapedSearch = search
+                .trim()
+                .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
             filter.$or = [
                 { name: { $regex: escapedSearch, $options: "i" } },
@@ -106,7 +105,6 @@ export const getEmployees = async (req, res) => {
     }
 };
 
-
 // GET /api/employees/:id
 export const getEmployeeById = async (req, res) => {
     try {
@@ -144,7 +142,6 @@ export const getEmployeeById = async (req, res) => {
     }
 };
 
-
 // POST /api/employees
 export const createEmployee = async (req, res) => {
     try {
@@ -160,9 +157,12 @@ export const createEmployee = async (req, res) => {
         } = req.body;
 
         if (
-            !name?.trim() ||
-            !email?.trim() ||
-            !designation?.trim() ||
+            typeof name !== "string" ||
+            !name.trim() ||
+            typeof email !== "string" ||
+            !email.trim() ||
+            typeof designation !== "string" ||
+            !designation.trim() ||
             !department ||
             salary === undefined ||
             salary === null ||
@@ -175,19 +175,19 @@ export const createEmployee = async (req, res) => {
         }
 
         const normalizedEmail = email.trim().toLowerCase();
-        const normalizedEmployeeId = employeeId?.trim();
+        const normalizedEmployeeId =
+            typeof employeeId === "string" ? employeeId.trim() : "";
 
-        if (
-            normalizedEmployeeId &&
-            normalizedEmployeeId.length > 50
-        ) {
+        if (normalizedEmployeeId && normalizedEmployeeId.length > 50) {
             return res.status(400).json({
                 success: false,
                 error: "Employee ID cannot exceed 50 characters"
             });
         }
 
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(normalizedEmail)) {
             return res.status(400).json({
                 success: false,
                 error: "Enter a valid email address"
@@ -261,9 +261,12 @@ export const createEmployee = async (req, res) => {
             });
         }
 
-        // Generate an ID when the form doesn't provide one.
-        const finalEmployeeId = normalizedEmployeeId ||
-            `EMP-${new mongoose.Types.ObjectId().toString().slice(-8).toUpperCase()}`;
+        const finalEmployeeId =
+            normalizedEmployeeId ||
+            `EMP-${new mongoose.Types.ObjectId()
+                .toString()
+                .slice(-8)
+                .toUpperCase()}`;
 
         const employee = await Employee.create({
             employeeId: finalEmployeeId,
@@ -308,7 +311,6 @@ export const createEmployee = async (req, res) => {
         });
     }
 };
-
 
 // PUT /api/employees/:id
 export const updateEmployee = async (req, res) => {
@@ -362,8 +364,9 @@ export const updateEmployee = async (req, res) => {
             }
 
             const normalizedEmail = email.trim().toLowerCase();
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+            if (!emailPattern.test(normalizedEmail)) {
                 return res.status(400).json({
                     success: false,
                     error: "Enter a valid email address"
@@ -386,7 +389,10 @@ export const updateEmployee = async (req, res) => {
         }
 
         if (employeeId !== undefined) {
-            if (typeof employeeId !== "string" || !employeeId.trim()) {
+            if (
+                typeof employeeId !== "string" ||
+                !employeeId.trim()
+            ) {
                 return res.status(400).json({
                     success: false,
                     error: "Employee ID cannot be empty"
@@ -394,6 +400,13 @@ export const updateEmployee = async (req, res) => {
             }
 
             const normalizedId = employeeId.trim();
+
+            if (normalizedId.length > 50) {
+                return res.status(400).json({
+                    success: false,
+                    error: "Employee ID cannot exceed 50 characters"
+                });
+            }
 
             const duplicateId = await Employee.findOne({
                 employeeId: normalizedId,
@@ -411,7 +424,10 @@ export const updateEmployee = async (req, res) => {
         }
 
         if (designation !== undefined) {
-            if (typeof designation !== "string" || !designation.trim()) {
+            if (
+                typeof designation !== "string" ||
+                !designation.trim()
+            ) {
                 return res.status(400).json({
                     success: false,
                     error: "Designation cannot be empty"
@@ -515,8 +531,8 @@ export const updateEmployee = async (req, res) => {
     }
 };
 
-
 // DELETE /api/employees/:id
+// Soft-delete: preserve employee and attendance history.
 export const deleteEmployee = async (req, res) => {
     try {
         const { id } = req.params;
@@ -528,7 +544,7 @@ export const deleteEmployee = async (req, res) => {
             });
         }
 
-        const employee = await Employee.findByIdAndDelete(id);
+        const employee = await Employee.findById(id);
 
         if (!employee) {
             return res.status(404).json({
@@ -537,21 +553,80 @@ export const deleteEmployee = async (req, res) => {
             });
         }
 
+        if (employee.status === "Inactive") {
+            return res.status(400).json({
+                success: false,
+                error: "Employee is already inactive"
+            });
+        }
+
+        employee.status = "Inactive";
+        await employee.save();
+
         return res.status(200).json({
             success: true,
-            message: "Employee deleted successfully"
+            message: "Employee marked as inactive successfully"
         });
     } catch (error) {
         console.error("deleteEmployee:", error);
 
         return res.status(500).json({
             success: false,
-            error: "Failed to delete employee"
+            error: "Failed to deactivate employee"
         });
     }
 };
 
+// PATCH /api/employees/:id/reactivate
+// Restore an inactive employee without recreating their record.
+export const reactivateEmployee = async (req, res) => {
+    try {
+        const { id } = req.params;
 
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid employee ID"
+            });
+        }
+
+        const employee = await Employee.findById(id);
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                error: "Employee not found"
+            });
+        }
+
+        if (employee.status === "Active") {
+            return res.status(400).json({
+                success: false,
+                error: "Employee is already active"
+            });
+        }
+
+        employee.status = "Active";
+        await employee.save();
+
+        const updatedEmployee = await Employee.findById(employee._id)
+            .populate("department", "departmentName")
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Employee reactivated successfully",
+            employee: updatedEmployee
+        });
+    } catch (error) {
+        console.error("reactivateEmployee:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to reactivate employee"
+        });
+    }
+};
 
 /**
  * GET /api/employees/me/profile
@@ -559,9 +634,7 @@ export const deleteEmployee = async (req, res) => {
  */
 export const getMyEmployeeProfile = async (req, res) => {
     try {
-        // Identity comes from the verified JWT middleware,
-        // never from a user-supplied employee ID.
-        const email = req.user.email?.trim().toLowerCase();
+        const email = req.user?.email?.trim().toLowerCase();
 
         if (!email) {
             return res.status(400).json({
@@ -570,9 +643,7 @@ export const getMyEmployeeProfile = async (req, res) => {
             });
         }
 
-        const employee = await Employee.findOne({
-            email: email
-        })
+        const employee = await Employee.findOne({ email })
             .select(
                 "employeeId name email designation department joiningDate status profileImage"
             )
@@ -595,7 +666,7 @@ export const getMyEmployeeProfile = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            error: "Failed to retrieve your employee profile"
+            error: "Failed to retrieve employee profile"
         });
     }
 };

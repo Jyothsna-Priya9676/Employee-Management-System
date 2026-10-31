@@ -4,12 +4,16 @@ import {
     useContext,
     useEffect,
     useState,
-    useCallback
+    useCallback,
 } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 const userContext = createContext(null);
+
+const API_URL = (
+    import.meta.env.VITE_API_URL || "http://localhost:3000/api"
+).replace(/\/+$/, "");
 
 const AuthContext = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -32,26 +36,30 @@ const AuthContext = ({ children }) => {
 
             try {
                 const response = await axios.get(
-                    "http://localhost:3000/api/auth/verify",
+                    `${API_URL}/auth/verify`,
                     {
                         headers: {
-                            Authorization: `Bearer ${token}`
-                        }
+                            Authorization: `Bearer ${token}`,
+                        },
                     }
                 );
 
-                if (!cancelled) {
-                    if (response.data.success) {
-                        setUser(response.data.user);
-                    } else {
-                        localStorage.removeItem("token");
-                        setUser(null);
-                    }
-                }
-            } catch {
-                localStorage.removeItem("token");
+                if (cancelled) return;
 
+                if (response.data.success && response.data.user) {
+                    setUser(response.data.user);
+                } else {
+                    localStorage.removeItem("token");
+                    setUser(null);
+                }
+            } catch (error) {
                 if (!cancelled) {
+                    console.error(
+                        "Authentication verification failed:",
+                        error.response?.data || error.message
+                    );
+
+                    localStorage.removeItem("token");
                     setUser(null);
                 }
             } finally {
@@ -80,7 +88,12 @@ const AuthContext = ({ children }) => {
 
     return (
         <userContext.Provider
-            value={{ user, loading, login, logout }}
+            value={{
+                user,
+                loading,
+                login,
+                logout,
+            }}
         >
             {children}
         </userContext.Provider>

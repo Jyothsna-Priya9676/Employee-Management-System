@@ -2,6 +2,25 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../utils/api";
 
+const INITIAL_PAGINATION = {
+    currentPage: 1,
+    totalPages: 1,
+    totalRecords: 0,
+};
+
+const INITIAL_SUMMARY = {
+    totalRecords: 0,
+    completed: 0,
+    inProgress: 0,
+};
+
+const INITIAL_TODAY_SUMMARY = {
+    totalEmployees: 0,
+    checkedIn: 0,
+    checkedOut: 0,
+    notCheckedIn: 0,
+};
+
 const AttendanceList = () => {
     const [attendance, setAttendance] = useState([]);
     const [date, setDate] = useState("");
@@ -9,20 +28,44 @@ const AttendanceList = () => {
     const [statusFilter, setStatusFilter] = useState("All");
     const [page, setPage] = useState(1);
 
-    const [pagination, setPagination] = useState({
-        currentPage: 1,
-        totalPages: 1,
-        totalRecords: 0
-    });
+    const [pagination, setPagination] = useState(INITIAL_PAGINATION);
+    const [summary, setSummary] = useState(INITIAL_SUMMARY);
+    const [todaySummary, setTodaySummary] = useState(
+        INITIAL_TODAY_SUMMARY
+    );
 
-    const [summary, setSummary] = useState({
-        totalRecords: 0,
-        completed: 0,
-        inProgress: 0
-    });
-
+    const [todayLoading, setTodayLoading] = useState(true);
+    const [todayError, setTodayError] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    const fetchTodaySummary = useCallback(async () => {
+        setTodayLoading(true);
+        setTodayError("");
+
+        try {
+            const response = await api.get(
+                "/attendance/admin/today-summary"
+            );
+
+            const data = response.data?.summary ?? {};
+
+            setTodaySummary({
+                totalEmployees: data.totalEmployees ?? 0,
+                checkedIn: data.checkedIn ?? 0,
+                checkedOut: data.checkedOut ?? 0,
+                notCheckedIn: data.notCheckedIn ?? 0,
+            });
+        } catch (err) {
+            setTodayError(
+                err.response?.data?.error ||
+                    err.response?.data?.message ||
+                    "Unable to load today's attendance summary."
+            );
+        } finally {
+            setTodayLoading(false);
+        }
+    }, []);
 
     const fetchAttendance = useCallback(async () => {
         setLoading(true);
@@ -31,19 +74,23 @@ const AttendanceList = () => {
         try {
             const params = {
                 page,
-                limit: 10
+                limit: 10,
             };
 
-            if (date) params.date = date;
+            if (date) {
+                params.date = date;
+            }
+
             if (employeeId.trim()) {
                 params.employeeId = employeeId.trim();
             }
+
             if (statusFilter !== "All") {
                 params.status = statusFilter;
             }
 
             const response = await api.get("/attendance", { params });
-            const data = response.data;
+            const data = response.data ?? {};
 
             setAttendance(
                 Array.isArray(data.attendance) ? data.attendance : []
@@ -52,34 +99,42 @@ const AttendanceList = () => {
             setSummary({
                 totalRecords: data.summary?.totalRecords ?? 0,
                 completed: data.summary?.completed ?? 0,
-                inProgress: data.summary?.inProgress ?? 0
+                inProgress: data.summary?.inProgress ?? 0,
             });
 
-            setPagination({
-                currentPage: data.pagination?.currentPage ?? page,
-                totalPages: Math.max(
+            const serverPagination = data.pagination ?? {};
+            const totalPages = Math.max(
+                1,
+                Number(serverPagination.totalPages) || 1
+            );
+            const currentPage = Math.min(
+                totalPages,
+                Math.max(
                     1,
-                    data.pagination?.totalPages ?? 1
-                ),
-                totalRecords: data.pagination?.totalRecords ?? 0
+                    Number(serverPagination.currentPage) || page
+                )
+            );
+
+            setPagination({
+                currentPage,
+                totalPages,
+                totalRecords: Number(serverPagination.totalRecords) || 0,
             });
+
+            // Keep the page state aligned with the server's valid page.
+            if (currentPage !== page) {
+                setPage(currentPage);
+            }
         } catch (err) {
             setError(
                 err.response?.data?.error ||
-                "Unable to load attendance records."
+                    err.response?.data?.message ||
+                    "Unable to load attendance records."
             );
 
             setAttendance([]);
-            setSummary({
-                totalRecords: 0,
-                completed: 0,
-                inProgress: 0
-            });
-            setPagination({
-                currentPage: 1,
-                totalPages: 1,
-                totalRecords: 0
-            });
+            setSummary(INITIAL_SUMMARY);
+            setPagination(INITIAL_PAGINATION);
         } finally {
             setLoading(false);
         }
@@ -89,12 +144,18 @@ const AttendanceList = () => {
         fetchAttendance();
     }, [fetchAttendance]);
 
+    useEffect(() => {
+        fetchTodaySummary();
+    }, [fetchTodaySummary]);
+
     const handleSearch = (event) => {
         event.preventDefault();
-        setPage(1);
 
-        // Fetch using the selected filters.
-        // If page is already 1, the effect may not run again.
+        if (page !== 1) {
+            setPage(1);
+            return;
+        }
+
         fetchAttendance();
     };
 
@@ -106,29 +167,27 @@ const AttendanceList = () => {
         setError("");
     };
 
-    const handleStatusChange = (event) => {
-        setStatusFilter(event.target.value);
-        setPage(1);
+    const handleRefresh = () => {
+        fetchAttendance();
+        fetchTodaySummary();
     };
 
     const formatDate = (value) => {
         if (!value) return "—";
 
-        // dateKey may be YYYY-MM-DD; preserve the calendar date.
         const dateString = String(value);
         const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
         if (match) {
             const [, year, month, day] = match;
-            const dateObject = new Date(
-                Date.UTC(Number(year), Number(month) - 1, Number(day))
-            );
 
-            return dateObject.toLocaleDateString("en-IN", {
+            return new Date(
+                Date.UTC(Number(year), Number(month) - 1, Number(day))
+            ).toLocaleDateString("en-IN", {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
-                timeZone: "UTC"
+                timeZone: "UTC",
             });
         }
 
@@ -140,7 +199,7 @@ const AttendanceList = () => {
             day: "2-digit",
             month: "short",
             year: "numeric",
-            timeZone: "UTC"
+            timeZone: "UTC",
         });
     };
 
@@ -155,56 +214,103 @@ const AttendanceList = () => {
             hour: "2-digit",
             minute: "2-digit",
             hour12: true,
-            timeZone: "Asia/Kolkata"
+            timeZone: "Asia/Kolkata",
         });
     };
 
-    const formatDuration = (minutes) => {
-        if (minutes == null) return "In progress";
+   const formatDuration = (minutes, checkIn, checkOut) => {
+    let totalMinutes;
 
-        const totalMinutes = Math.max(0, Number(minutes));
-        const hours = Math.floor(totalMinutes / 60);
-        const remainingMinutes = totalMinutes % 60;
+    // Prefer actual timestamps for completed attendance.
+    if (checkIn && checkOut) {
+        const start = new Date(checkIn).getTime();
+        const end = new Date(checkOut).getTime();
 
-        return `${hours}h ${remainingMinutes}m`;
-    };
+        if (
+            !Number.isFinite(start) ||
+            !Number.isFinite(end) ||
+            end < start
+        ) {
+            return "—";
+        }
 
-    const getStatusClass = (record) => {
-        return record.checkOut
-            ? "bg-success"
-            : "bg-warning text-dark";
-    };
+        totalMinutes = Math.floor((end - start) / 60000);
+    } else if (checkIn) {
+        return "In progress";
+    } else if (
+        minutes !== null &&
+        minutes !== undefined &&
+        minutes !== "" &&
+        Number.isFinite(Number(minutes)) &&
+        Number(minutes) >= 0
+    ) {
+        totalMinutes = Number(minutes);
+    } else {
+        return "—";
+    }
+
+    const hours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+
+    return `${hours}h ${remainingMinutes}m`;
+};
+
+    const getStatusClass = (record) =>
+        record.checkOut ? "bg-success" : "bg-warning text-dark";
+
+    const todayCards = [
+        {
+            label: "Total employees",
+            value: todaySummary.totalEmployees,
+            icon: "bi-people",
+            color: "info",
+        },
+        {
+            label: "Checked in",
+            value: todaySummary.checkedIn,
+            icon: "bi-box-arrow-in-right",
+            color: "success",
+        },
+        {
+            label: "Checked out",
+            value: todaySummary.checkedOut,
+            icon: "bi-box-arrow-right",
+            color: "primary",
+        },
+        {
+            label: "Not checked in",
+            value: todaySummary.notCheckedIn,
+            icon: "bi-clock-history",
+            color: "warning",
+        },
+    ];
 
     return (
         <div className="container-fluid py-3">
-            {/* Heading */}
             <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
                 <div>
-                    <h3 className="fw-bold mb-1">
-                        Attendance Management
-                    </h3>
+                    <h3 className="fw-bold mb-1">Attendance Management</h3>
                     <p className="text-secondary mb-0">
-                        Monitor employee check-ins, check-outs, and working hours.
+                        Monitor employee check-ins, check-outs, and working
+                        hours.
                     </p>
                 </div>
 
                 <button
                     type="button"
                     className="btn btn-outline-info"
-                    onClick={fetchAttendance}
-                    disabled={loading}
+                    onClick={handleRefresh}
+                    disabled={loading || todayLoading}
                 >
-                    <i className="bi bi-arrow-clockwise me-2"></i>
-                    {loading ? "Refreshing..." : "Refresh"}
+                    <i className="bi bi-arrow-clockwise me-2" />
+                    {loading || todayLoading ? "Refreshing..." : "Refresh"}
                 </button>
             </div>
 
-            {/* Error message */}
             {error && (
                 <div className="alert alert-danger" role="alert">
-                    <i className="bi bi-exclamation-triangle me-2"></i>
+                    <i className="bi bi-exclamation-triangle me-2" />
                     {error}
-
                     <button
                         type="button"
                         className="btn-close float-end"
@@ -214,64 +320,129 @@ const AttendanceList = () => {
                 </div>
             )}
 
-            {/* Summary cards */}
+            <section className="mb-4">
+                <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <h5 className="fw-bold mb-1">Today's Attendance</h5>
+                        <p className="text-secondary small mb-0">
+                            Daily employee attendance overview.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={fetchTodaySummary}
+                        disabled={todayLoading}
+                    >
+                        <i className="bi bi-arrow-clockwise me-1" />
+                        Refresh summary
+                    </button>
+                </div>
+
+                {todayError && (
+                    <div className="alert alert-warning" role="alert">
+                        <i className="bi bi-exclamation-triangle me-2" />
+                        {todayError}
+                        <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary ms-2"
+                            onClick={fetchTodaySummary}
+                            disabled={todayLoading}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
+
+                <div className="row g-3">
+                    {todayCards.map((item) => (
+                        <div
+                            className="col-sm-6 col-xl-3"
+                            key={item.label}
+                        >
+                            <div className="card border-0 shadow-sm h-100">
+                                <div className="card-body d-flex align-items-center gap-3">
+                                    <div
+                                        className={`rounded-3 bg-${item.color} bg-opacity-10 p-3`}
+                                    >
+                                        <i
+                                            className={`bi ${item.icon} fs-3 text-${item.color}`}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <p className="text-secondary mb-1">
+                                            {item.label}
+                                        </p>
+                                        <h4 className="fw-bold mb-0">
+                                            {todayLoading ? (
+                                                <span
+                                                    className="spinner-border spinner-border-sm"
+                                                    role="status"
+                                                    aria-label="Loading"
+                                                />
+                                            ) : todayError ? (
+                                                "—"
+                                            ) : (
+                                                item.value
+                                            )}
+                                        </h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
             <div className="row g-3 mb-4">
-                <div className="col-sm-6 col-xl-4">
-                    <div className="card border-0 shadow-sm h-100">
-                        <div className="card-body d-flex align-items-center gap-3">
-                            <div className="rounded-3 bg-info bg-opacity-10 p-3">
-                                <i className="bi bi-calendar-check fs-3 text-info"></i>
-                            </div>
-                            <div>
-                                <p className="text-secondary mb-1">
-                                    Total records
-                                </p>
-                                <h4 className="fw-bold mb-0">
-                                    {summary.totalRecords}
-                                </h4>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="col-sm-6 col-xl-4">
-                    <div className="card border-0 shadow-sm h-100">
-                        <div className="card-body d-flex align-items-center gap-3">
-                            <div className="rounded-3 bg-success bg-opacity-10 p-3">
-                                <i className="bi bi-check-circle fs-3 text-success"></i>
-                            </div>
-                            <div>
-                                <p className="text-secondary mb-1">
-                                    Completed records
-                                </p>
-                                <h4 className="fw-bold mb-0">
-                                    {summary.completed}
-                                </h4>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="col-sm-6 col-xl-4">
-                    <div className="card border-0 shadow-sm h-100">
-                        <div className="card-body d-flex align-items-center gap-3">
-                            <div className="rounded-3 bg-warning bg-opacity-10 p-3">
-                                <i className="bi bi-clock-history fs-3 text-warning"></i>
-                            </div>
-                            <div>
-                                <p className="text-secondary mb-1">
-                                    In-progress records
-                                </p>
-                                <h4 className="fw-bold mb-0">
-                                    {summary.inProgress}
-                                </h4>
+                {[
+                    {
+                        label: "Total records",
+                        value: summary.totalRecords,
+                        icon: "bi-calendar-check",
+                        color: "info",
+                    },
+                    {
+                        label: "Completed records",
+                        value: summary.completed,
+                        icon: "bi-check-circle",
+                        color: "success",
+                    },
+                    {
+                        label: "In-progress records",
+                        value: summary.inProgress,
+                        icon: "bi-clock-history",
+                        color: "warning",
+                    },
+                ].map((item) => (
+                    <div className="col-sm-6 col-xl-4" key={item.label}>
+                        <div className="card border-0 shadow-sm h-100">
+                            <div className="card-body d-flex align-items-center gap-3">
+                                <div
+                                    className={`rounded-3 bg-${item.color} bg-opacity-10 p-3`}
+                                >
+                                    <i
+                                        className={`bi ${item.icon} fs-3 text-${item.color}`}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-secondary mb-1">
+                                        {item.label}
+                                    </p>
+                                    <h4 className="fw-bold mb-0">
+                                        {summary.totalRecords === 0 && loading
+                                            ? "—"
+                                            : item.value}
+                                    </h4>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                ))}
             </div>
 
-            {/* Filters */}
             <div className="card border-0 shadow-sm mb-4">
                 <div className="card-body">
                     <form onSubmit={handleSearch}>
@@ -288,10 +459,9 @@ const AttendanceList = () => {
                                     id="attendanceDate"
                                     className="form-control"
                                     value={date}
-                                    onChange={(event) => {
-                                        setDate(event.target.value);
-                                        setPage(1);
-                                    }}
+                                    onChange={(event) =>
+                                        setDate(event.target.value)
+                                    }
                                 />
                             </div>
 
@@ -325,11 +495,15 @@ const AttendanceList = () => {
                                     id="attendanceStatus"
                                     className="form-select"
                                     value={statusFilter}
-                                    onChange={handleStatusChange}
+                                    onChange={(event) =>
+                                        setStatusFilter(event.target.value)
+                                    }
                                 >
                                     <option value="All">All statuses</option>
                                     <option value="Completed">Completed</option>
-                                    <option value="In Progress">In progress</option>
+                                    <option value="In Progress">
+                                        In progress
+                                    </option>
                                 </select>
                             </div>
 
@@ -339,10 +513,9 @@ const AttendanceList = () => {
                                     className="btn btn-info text-white flex-grow-1"
                                     disabled={loading}
                                 >
-                                    <i className="bi bi-search me-1"></i>
+                                    <i className="bi bi-search me-1" />
                                     Search
                                 </button>
-
                                 <button
                                     type="button"
                                     className="btn btn-outline-secondary"
@@ -356,12 +529,9 @@ const AttendanceList = () => {
                 </div>
             </div>
 
-            {/* Attendance table */}
             <div className="card border-0 shadow-sm">
                 <div className="card-header bg-white py-3">
-                    <h5 className="fw-bold mb-0">
-                        Attendance Records
-                    </h5>
+                    <h5 className="fw-bold mb-0">Attendance Records</h5>
                     <p className="text-secondary small mb-0 mt-1">
                         Records matching your selected filters.
                     </p>
@@ -369,7 +539,10 @@ const AttendanceList = () => {
 
                 {loading ? (
                     <div className="text-center py-5">
-                        <div className="spinner-border text-info" role="status">
+                        <div
+                            className="spinner-border text-info"
+                            role="status"
+                        >
                             <span className="visually-hidden">
                                 Loading...
                             </span>
@@ -380,7 +553,7 @@ const AttendanceList = () => {
                     </div>
                 ) : error && attendance.length === 0 ? (
                     <div className="text-center py-5">
-                        <i className="bi bi-exclamation-circle fs-1 text-danger"></i>
+                        <i className="bi bi-exclamation-circle fs-1 text-danger" />
                         <p className="text-secondary mt-3">
                             Could not retrieve attendance records.
                         </p>
@@ -394,12 +567,13 @@ const AttendanceList = () => {
                     </div>
                 ) : attendance.length === 0 ? (
                     <div className="text-center py-5">
-                        <i className="bi bi-calendar-x fs-1 text-secondary"></i>
+                        <i className="bi bi-calendar-x fs-1 text-secondary" />
                         <h5 className="mt-3">
                             No attendance records found
                         </h5>
                         <p className="text-secondary mb-0">
-                            Try changing the date, employee ID, or status filter.
+                            Try changing the date, employee ID, or status
+                            filter.
                         </p>
                     </div>
                 ) : (
@@ -417,12 +591,10 @@ const AttendanceList = () => {
                                     <th>Status</th>
                                 </tr>
                             </thead>
-
                             <tbody>
                                 {attendance.map((record) => {
-                                    const employee = record.employee || {};
+                                    const employee = record.employee ?? {};
                                     const department = employee.department;
-
                                     const departmentName =
                                         typeof department === "object"
                                             ? department?.departmentName
@@ -438,34 +610,33 @@ const AttendanceList = () => {
                                                     {employee.email || "—"}
                                                 </div>
                                             </td>
-
                                             <td className="text-nowrap">
                                                 {employee.employeeId || "—"}
                                             </td>
-
-                                            <td>
-                                                {departmentName || "—"}
-                                            </td>
-
+                                            <td>{departmentName || "—"}</td>
                                             <td className="text-nowrap">
-                                                {formatDate(record.dateKey || record.date)}
+                                                {formatDate(
+                                                    record.dateKey || record.date
+                                                )}
                                             </td>
-
                                             <td className="text-nowrap">
                                                 {formatTime(record.checkIn)}
                                             </td>
-
                                             <td className="text-nowrap">
                                                 {formatTime(record.checkOut)}
                                             </td>
-
                                             <td className="text-nowrap">
-                                                {formatDuration(record.durationMinutes)}
+                                                {formatDuration(
+                                                    record.durationMinutes,
+                                                    record.checkIn,
+                                                    record.checkOut
+                                                )}
                                             </td>
-
                                             <td>
                                                 <span
-                                                    className={`badge ${getStatusClass(record)}`}
+                                                    className={`badge ${getStatusClass(
+                                                        record
+                                                    )}`}
                                                 >
                                                     {record.checkOut
                                                         ? "Completed"
@@ -480,13 +651,11 @@ const AttendanceList = () => {
                     </div>
                 )}
 
-                {/* Pagination */}
                 {!loading && pagination.totalRecords > 0 && (
                     <div className="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <span className="small text-secondary">
                             Page {pagination.currentPage} of{" "}
-                            {pagination.totalPages}
-                            {" · "}
+                            {pagination.totalPages} ·{" "}
                             {pagination.totalRecords} matching records
                         </span>
 
@@ -494,14 +663,16 @@ const AttendanceList = () => {
                             <button
                                 type="button"
                                 className="btn btn-outline-secondary btn-sm"
-                                disabled={page <= 1 || loading}
+                                disabled={
+                                    pagination.currentPage <= 1 || loading
+                                }
                                 onClick={() =>
                                     setPage((current) =>
                                         Math.max(1, current - 1)
                                     )
                                 }
                             >
-                                <i className="bi bi-chevron-left me-1"></i>
+                                <i className="bi bi-chevron-left me-1" />
                                 Previous
                             </button>
 
@@ -509,7 +680,9 @@ const AttendanceList = () => {
                                 type="button"
                                 className="btn btn-outline-secondary btn-sm"
                                 disabled={
-                                    page >= pagination.totalPages || loading
+                                    pagination.currentPage >=
+                                        pagination.totalPages ||
+                                    loading
                                 }
                                 onClick={() =>
                                     setPage((current) =>
@@ -521,7 +694,7 @@ const AttendanceList = () => {
                                 }
                             >
                                 Next
-                                <i className="bi bi-chevron-right ms-1"></i>
+                                <i className="bi bi-chevron-right ms-1" />
                             </button>
                         </div>
                     </div>

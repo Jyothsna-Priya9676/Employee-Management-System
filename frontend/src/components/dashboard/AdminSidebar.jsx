@@ -1,12 +1,14 @@
 
 import { NavLink } from "react-router-dom";
+
 import {
     FaTachometerAlt,
     FaUsers,
     FaBuilding,
     FaCalendarCheck,
     FaClipboardList,
-    FaRobot
+    FaRobot,
+    FaMoneyBillWave
 } from "react-icons/fa";
 
 const AdminSidebar = () => {
@@ -28,6 +30,7 @@ const AdminSidebar = () => {
             </div>
 
             <nav className="p-3 d-flex flex-column gap-2">
+                {/* Dashboard */}
                 <NavLink
                     to="/admin-dashboard"
                     end
@@ -37,6 +40,7 @@ const AdminSidebar = () => {
                     <span>Dashboard</span>
                 </NavLink>
 
+                {/* Employees */}
                 <NavLink
                     to="/admin-dashboard/employees"
                     className={linkClass}
@@ -45,6 +49,7 @@ const AdminSidebar = () => {
                     <span>Employees</span>
                 </NavLink>
 
+                {/* Departments */}
                 <NavLink
                     to="/admin-dashboard/departments"
                     className={linkClass}
@@ -53,6 +58,7 @@ const AdminSidebar = () => {
                     <span>Departments</span>
                 </NavLink>
 
+                {/* Attendance */}
                 <NavLink
                     to="/admin-dashboard/attendance"
                     className={linkClass}
@@ -61,12 +67,22 @@ const AdminSidebar = () => {
                     <span>Attendance</span>
                 </NavLink>
 
+                {/* Leave Requests */}
                 <NavLink
                     to="/admin-dashboard/leaves"
                     className={linkClass}
                 >
                     <FaCalendarCheck />
                     <span>Leave Requests</span>
+                </NavLink>
+
+                {/* Payroll */}
+                <NavLink
+                    to="/admin-dashboard/payroll"
+                    className={linkClass}
+                >
+                    <FaMoneyBillWave />
+                    <span>Payroll</span>
                 </NavLink>
 
                 {/* AI HR Assistant */}

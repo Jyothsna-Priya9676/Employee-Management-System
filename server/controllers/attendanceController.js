@@ -2,25 +2,28 @@
 import Employee from "../models/Employee.js";
 import Attendance from "../models/Attendance.js";
 
-const getTodayKey = () => {
-    // Use India Standard Time for the attendance day.
-    return new Intl.DateTimeFormat("en-CA", {
+// Today's date in India Standard Time (YYYY-MM-DD).
+const getTodayKey = () =>
+    new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Kolkata",
         year: "numeric",
         month: "2-digit",
-        day: "2-digit"
+        day: "2-digit",
     }).format(new Date());
-};
 
+// Find the employee linked to the logged-in user's email.
 const findOwnEmployee = async (req) => {
-    const email = req.user.email?.trim().toLowerCase();
+    const email = req.user?.email?.trim();
 
     if (!email) {
         return null;
     }
 
     return Employee.findOne({
-        email: { $regex: new RegExp(`^${email}$`, "i") }
+        email: email.toLowerCase(),
+    }).collation({
+        locale: "en",
+        strength: 2,
     });
 };
 
@@ -32,14 +35,14 @@ export const checkIn = async (req, res) => {
         if (!employee) {
             return res.status(404).json({
                 success: false,
-                error: "No employee record is linked to your account"
+                error: "No employee record is linked to your account",
             });
         }
 
         if (employee.status !== "Active") {
             return res.status(403).json({
                 success: false,
-                error: "Inactive employees cannot record attendance"
+                error: "Inactive employees cannot record attendance",
             });
         }
 
@@ -47,7 +50,7 @@ export const checkIn = async (req, res) => {
 
         const existing = await Attendance.findOne({
             employee: employee._id,
-            dateKey
+            dateKey,
         });
 
         if (existing) {
@@ -56,26 +59,27 @@ export const checkIn = async (req, res) => {
                 error: existing.checkOut
                     ? "You have already completed attendance for today"
                     : "You have already checked in today",
-                attendance: existing
+                attendance: existing,
             });
         }
 
         const attendance = await Attendance.create({
             employee: employee._id,
             dateKey,
-            checkIn: new Date()
+            checkIn: new Date(),
         });
 
         return res.status(201).json({
             success: true,
             message: "Checked in successfully",
-            attendance
+            attendance,
         });
     } catch (error) {
+        // Handles simultaneous check-in requests against the unique index.
         if (error.code === 11000) {
             return res.status(409).json({
                 success: false,
-                error: "Attendance has already been recorded for today"
+                error: "Attendance has already been recorded for today",
             });
         }
 
@@ -83,7 +87,7 @@ export const checkIn = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            error: "Failed to check in"
+            error: "Failed to check in",
         });
     }
 };
@@ -96,7 +100,14 @@ export const checkOut = async (req, res) => {
         if (!employee) {
             return res.status(404).json({
                 success: false,
-                error: "No employee record is linked to your account"
+                error: "No employee record is linked to your account",
+            });
+        }
+
+        if (employee.status !== "Active") {
+            return res.status(403).json({
+                success: false,
+                error: "Inactive employees cannot record attendance",
             });
         }
 
@@ -104,35 +115,41 @@ export const checkOut = async (req, res) => {
 
         const attendance = await Attendance.findOne({
             employee: employee._id,
-            dateKey
+            dateKey,
         });
 
         if (!attendance) {
             return res.status(400).json({
                 success: false,
-                error: "Please check in before checking out"
+                error: "Please check in before checking out",
             });
         }
 
         if (attendance.checkOut) {
             return res.status(409).json({
                 success: false,
-                error: "You have already checked out today"
+                error: "You have already checked out today",
             });
         }
 
         const checkOutTime = new Date();
+        const checkInTime = new Date(attendance.checkIn);
 
-        if (checkOutTime <= attendance.checkIn) {
+        if (
+            !attendance.checkIn ||
+            Number.isNaN(checkInTime.getTime()) ||
+            checkOutTime <= checkInTime
+        ) {
             return res.status(400).json({
                 success: false,
-                error: "Check-out time must be after check-in time"
+                error: "Check-out time must be after check-in time",
             });
         }
 
         attendance.checkOut = checkOutTime;
         attendance.durationMinutes = Math.floor(
-            (checkOutTime.getTime() - attendance.checkIn.getTime()) / 60000
+            (checkOutTime.getTime() - checkInTime.getTime()) /
+                60000
         );
         attendance.status = "Completed";
 
@@ -141,14 +158,14 @@ export const checkOut = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: "Checked out successfully",
-            attendance
+            attendance,
         });
     } catch (error) {
         console.error("checkOut:", error);
 
         return res.status(500).json({
             success: false,
-            error: "Failed to check out"
+            error: "Failed to check out",
         });
     }
 };
@@ -161,12 +178,19 @@ export const getMyAttendance = async (req, res) => {
         if (!employee) {
             return res.status(404).json({
                 success: false,
-                error: "No employee record is linked to your account"
+                error: "No employee record is linked to your account",
+            });
+        }
+
+        if (employee.status !== "Active") {
+            return res.status(403).json({
+                success: false,
+                error: "Inactive employees cannot access attendance",
             });
         }
 
         const attendance = await Attendance.find({
-            employee: employee._id
+            employee: employee._id,
         })
             .sort({ dateKey: -1 })
             .limit(100)
@@ -174,21 +198,19 @@ export const getMyAttendance = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            attendance
+            attendance,
         });
     } catch (error) {
         console.error("getMyAttendance:", error);
 
         return res.status(500).json({
             success: false,
-            error: "Failed to retrieve your attendance"
+            error: "Failed to retrieve your attendance",
         });
     }
 };
 
 // GET /api/attendance (admin only)
-
- // GET /api/attendance (admin only)
 export const getAllAttendance = async (req, res) => {
     try {
         const {
@@ -196,10 +218,14 @@ export const getAllAttendance = async (req, res) => {
             employeeId = "",
             status = "All",
             page = 1,
-            limit = 10
+            limit = 10,
         } = req.query;
 
-        const currentPage = Math.max(1, parseInt(page, 10) || 1);
+        const currentPage = Math.max(
+            1,
+            parseInt(page, 10) || 1
+        );
+
         const pageSize = Math.min(
             100,
             Math.max(1, parseInt(limit, 10) || 10)
@@ -207,12 +233,12 @@ export const getAllAttendance = async (req, res) => {
 
         const filter = {};
 
-        // 1. Filter by date
+        // Validate and filter by date.
         if (date) {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
                 return res.status(400).json({
                     success: false,
-                    error: "Date must use YYYY-MM-DD format"
+                    error: "Date must use YYYY-MM-DD format",
                 });
             }
 
@@ -224,17 +250,17 @@ export const getAllAttendance = async (req, res) => {
             ) {
                 return res.status(400).json({
                     success: false,
-                    error: "Please provide a valid date"
+                    error: "Please provide a valid date",
                 });
             }
 
             filter.dateKey = date;
         }
 
-        // 2. Filter by employee ID
+        // Filter by employee ID.
         if (employeeId.trim()) {
             const employee = await Employee.findOne({
-                employeeId: employeeId.trim()
+                employeeId: employeeId.trim(),
             }).select("_id");
 
             if (!employee) {
@@ -244,25 +270,25 @@ export const getAllAttendance = async (req, res) => {
                     summary: {
                         totalRecords: 0,
                         completed: 0,
-                        inProgress: 0
+                        inProgress: 0,
                     },
                     pagination: {
-                        currentPage,
-                        totalPages: 0,
+                        currentPage: 1,
+                        totalPages: 1,
                         totalRecords: 0,
-                        limit: pageSize
-                    }
+                        limit: pageSize,
+                    },
                 });
             }
 
             filter.employee = employee._id;
         }
 
-        // 3. Validate and apply status filter
+        // Validate status filter.
         if (!["All", "Completed", "In Progress"].includes(status)) {
             return res.status(400).json({
                 success: false,
-                error: "Status must be All, Completed, or In Progress"
+                error: "Status must be All, Completed, or In Progress",
             });
         }
 
@@ -272,9 +298,7 @@ export const getAllAttendance = async (req, res) => {
             filter.checkOut = null;
         }
 
-        // 4. Fetch page data and accurate summary counts.
-        // Summary counts use the date/employee filters, not the
-        // selected status filter, so all three categories are visible.
+        // Summary respects date/employee filters but ignores status.
         const summaryFilter = { ...filter };
         delete summaryFilter.checkOut;
 
@@ -283,19 +307,16 @@ export const getAllAttendance = async (req, res) => {
             totalRecords,
             totalMatchingRecords,
             completed,
-            inProgress
+            inProgress,
         ] = await Promise.all([
             Attendance.find(filter)
-                .populate(
-                    "employee",
-                    "employeeId name email designation department"
-                )
                 .populate({
                     path: "employee",
+                    select: "employeeId name email designation department",
                     populate: {
                         path: "department",
-                        select: "departmentName"
-                    }
+                        select: "departmentName",
+                    },
                 })
                 .sort({ dateKey: -1, checkIn: -1 })
                 .skip((currentPage - 1) * pageSize)
@@ -308,14 +329,30 @@ export const getAllAttendance = async (req, res) => {
 
             Attendance.countDocuments({
                 ...summaryFilter,
-                checkOut: { $ne: null }
+                checkOut: { $ne: null },
             }),
 
             Attendance.countDocuments({
                 ...summaryFilter,
-                checkOut: null
-            })
+                checkOut: null,
+            }),
         ]);
+
+        // Diagnostic logging: identifies records with missing employee references.
+        const missingEmployeeRecords = attendance
+            .filter((record) => !record.employee)
+            .map((record) => ({
+                attendanceId: record._id,
+                employeeRef: record.employee ?? null,
+                dateKey: record.dateKey,
+            }));
+
+        if (missingEmployeeRecords.length > 0) {
+            console.warn(
+                "Attendance records with missing employee references:",
+                missingEmployeeRecords
+            );
+        }
 
         return res.status(200).json({
             success: true,
@@ -323,22 +360,85 @@ export const getAllAttendance = async (req, res) => {
             summary: {
                 totalRecords: totalMatchingRecords,
                 completed,
-                inProgress
+                inProgress,
             },
             pagination: {
                 currentPage,
-                totalPages: Math.ceil(totalRecords / pageSize),
+                totalPages: Math.max(
+                    1,
+                    Math.ceil(totalRecords / pageSize)
+                ),
                 totalRecords,
-                limit: pageSize
-            }
+                limit: pageSize,
+            },
         });
     } catch (error) {
         console.error("getAllAttendance:", error);
 
         return res.status(500).json({
             success: false,
-            error: "Failed to retrieve attendance records"
+            error: "Failed to retrieve attendance records",
         });
     }
 };
 
+// GET /api/attendance/admin/today-summary
+export const getTodayAttendanceSummary = async (req, res) => {
+    try {
+        const dateKey = getTodayKey();
+
+        const activeEmployees = await Employee.find({
+            status: "Active",
+        })
+            .select("_id")
+            .lean();
+
+        const records = await Attendance.find({ dateKey })
+            .select("employee checkIn checkOut")
+            .lean();
+
+        // One record per employee per day is enforced by the unique index.
+        const recordsByEmployee = new Map(
+            records.map((record) => [
+                String(record.employee),
+                record,
+            ])
+        );
+
+        let checkedIn = 0;
+        let checkedOut = 0;
+        let notCheckedIn = 0;
+
+        for (const employee of activeEmployees) {
+            const record = recordsByEmployee.get(
+                String(employee._id)
+            );
+
+            if (record?.checkOut) {
+                checkedOut++;
+            } else if (record?.checkIn) {
+                checkedIn++;
+            } else {
+                notCheckedIn++;
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            date: dateKey,
+            summary: {
+                totalEmployees: activeEmployees.length,
+                checkedIn,
+                checkedOut,
+                notCheckedIn,
+            },
+        });
+    } catch (error) {
+        console.error("Today's attendance summary error:", error);
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch today's attendance summary",
+        });
+    }
+};

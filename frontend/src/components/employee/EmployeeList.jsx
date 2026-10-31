@@ -12,6 +12,7 @@ const EmployeeList = () => {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -26,17 +27,39 @@ const EmployeeList = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
 
+  // Load all departments from the backend.
   const loadDepartments = useCallback(async () => {
     try {
       const response = await api.get("/departments");
-      setDepartments(response.data.departments || []);
+
+      const departmentData = response.data;
+
+      // Support both:
+      // 1. { departments: [...] }
+      // 2. [...]
+      const departmentList = Array.isArray(departmentData)
+        ? departmentData
+        : Array.isArray(departmentData?.departments)
+          ? departmentData.departments
+          : [];
+
+      setDepartments(departmentList);
+
+      return departmentList;
     } catch (err) {
+      console.error("Department loading error:", err);
+
       setError(
-        err.response?.data?.error || "Unable to load departments."
+        err.response?.data?.error ||
+          "Unable to load departments."
       );
+
+      setDepartments([]);
+      return [];
     }
   }, []);
 
+  // Load employees with pagination and filters.
   const loadEmployees = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -52,6 +75,7 @@ const EmployeeList = () => {
       });
 
       setEmployees(response.data.employees || []);
+
       setPagination(
         response.data.pagination || {
           currentPage: page,
@@ -78,17 +102,25 @@ const EmployeeList = () => {
     loadEmployees();
   }, [loadEmployees]);
 
-  const openCreateForm = () => {
+  const openCreateForm = async () => {
     setEditingEmployee(null);
     setError("");
     setSuccess("");
+
+    // Refresh departments before opening the form.
+    await loadDepartments();
+
     setShowForm(true);
   };
 
-  const openEditForm = (employee) => {
+  const openEditForm = async (employee) => {
     setEditingEmployee(employee);
     setError("");
     setSuccess("");
+
+    // Also refresh departments when editing.
+    await loadDepartments();
+
     setShowForm(true);
   };
 
@@ -103,9 +135,11 @@ const EmployeeList = () => {
           `/employees/${editingEmployee._id}`,
           formData
         );
+
         setSuccess("Employee updated successfully.");
       } else {
         await api.post("/employees", formData);
+
         setSuccess("Employee created successfully.");
       }
 
@@ -113,11 +147,11 @@ const EmployeeList = () => {
       setEditingEmployee(null);
       setPage(1);
 
-      // Refresh immediately, including when the current page is already 1.
       await loadEmployees();
     } catch (err) {
       setError(
-        err.response?.data?.error || "Unable to save employee."
+        err.response?.data?.error ||
+          "Unable to save employee."
       );
     } finally {
       setSaving(false);
@@ -136,6 +170,7 @@ const EmployeeList = () => {
 
     try {
       await api.delete(`/employees/${employee._id}`);
+
       setSuccess("Employee deleted successfully.");
 
       if (employees.length === 1 && page > 1) {
@@ -145,7 +180,8 @@ const EmployeeList = () => {
       }
     } catch (err) {
       setError(
-        err.response?.data?.error || "Unable to delete employee."
+        err.response?.data?.error ||
+          "Unable to delete employee."
       );
     }
   };
@@ -203,6 +239,13 @@ const EmployeeList = () => {
           </div>
 
           <div className="card-body">
+            {departments.length === 0 ? (
+              <div className="alert alert-warning">
+                No departments found. Please create departments
+                before assigning employees.
+              </div>
+            ) : null}
+
             <EmployeeForm
               initialData={editingEmployee}
               departments={departments}
@@ -224,6 +267,7 @@ const EmployeeList = () => {
               <label htmlFor="employeeSearch" className="form-label">
                 Search employees
               </label>
+
               <input
                 id="employeeSearch"
                 type="search"
@@ -241,6 +285,7 @@ const EmployeeList = () => {
               <label htmlFor="employeeStatus" className="form-label">
                 Filter by status
               </label>
+
               <select
                 id="employeeStatus"
                 className="form-select"
@@ -272,6 +317,7 @@ const EmployeeList = () => {
 
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h5 className="mb-0">Employee Directory</h5>
+
             <span className="text-secondary small">
               {pagination.totalEmployees} total employees
             </span>
@@ -282,6 +328,7 @@ const EmployeeList = () => {
               <div className="spinner-border text-primary" role="status">
                 <span className="visually-hidden">Loading...</span>
               </div>
+
               <p className="text-secondary mt-3">
                 Loading employee records...
               </p>
@@ -289,9 +336,11 @@ const EmployeeList = () => {
           ) : employees.length === 0 ? (
             <div className="text-center py-5">
               <h5>No employees found</h5>
+
               <p className="text-secondary">
                 Try changing your filters or add a new employee.
               </p>
+
               {!search && !status && (
                 <button
                   className="btn btn-primary"
@@ -332,9 +381,11 @@ const EmployeeList = () => {
                           >
                             {employee.name}
                           </button>
+
                           <div className="small text-secondary">
                             {employee.employeeId}
                           </div>
+
                           <div className="small text-secondary">
                             {employee.email}
                           </div>

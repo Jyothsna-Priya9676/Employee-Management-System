@@ -5,6 +5,7 @@ import Navbar from "../components/dashboard/Navbar";
 import AdminSummary from "../components/dashboard/AdminSummary";
 import DepartmentBreakdown from "../components/dashboard/DepartmentBreakdown";
 import AttendanceTrends from "../components/dashboard/AttendanceTrends";
+import AttendanceRateAnalytics from "../components/dashboard/AttendanceRateAnalytics";
 import LeaveStatistics from "../components/dashboard/LeaveStatistics";
 import { useAuth } from "../context/authContext";
 
@@ -82,6 +83,12 @@ const AdminDashboard = () => {
                             <div className="row g-4 mb-4">
                                 <div className="col-12">
                                     <AttendanceTrends />
+                                </div>
+                            </div>
+
+                            <div className="row g-4 mb-4">
+                                <div className="col-12">
+                                    <AttendanceRateAnalytics />
                                 </div>
                             </div>
 
