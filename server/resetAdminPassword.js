@@ -6,18 +6,16 @@ import connectToDatabase from "./db/db.js";
 
 const resetAdminPassword = async () => {
   try {
-    if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
-      throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be configured");
+    const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+    const password = process.env.ADMIN_PASSWORD;
+
+    if (!email || !password) {
+      throw new Error(
+        "ADMIN_EMAIL and ADMIN_PASSWORD must be configured"
+      );
     }
 
-    await connectToDatabase();
-
-    const email = process.env.ADMIN_EMAIL.trim().toLowerCase();
-
-    const passwordHash = await bcrypt.hash(
-      process.env.ADMIN_PASSWORD,
-      12
-    );
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const admin = await User.findOneAndUpdate(
       { email, role: "admin" },
@@ -26,17 +24,17 @@ const resetAdminPassword = async () => {
     );
 
     if (!admin) {
-      console.log("Admin account not found. No account was modified.");
-      return;
+      throw new Error(
+        `Admin account not found for configured email: ${email}`
+      );
     }
 
     console.log("Admin password reset successfully.");
+    return true;
   } catch (error) {
     console.error("Admin password reset failed:", error.message);
-    process.exitCode = 1;
-  } finally {
-    await mongoose.disconnect().catch(() => {});
+    throw error;
   }
 };
 
-resetAdminPassword();
+export default resetAdminPassword;
