@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "start": "node --use-system-ca index.js",
-  "dev": "nodemon --exec \"node --use-system-ca --env-file=.env\" index.js",
-  "reset-admin": "node --use-system-ca resetAdminPassword.js"
-},
+    "start": "node --use-system-ca index.js",
+    "dev": "nodemon --exec \"node --use-system-ca --env-file=.env\" index.js",
+    "reset-admin": "node --use-system-ca resetAdminPassword.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -23,6 +23,7 @@
     "nodemailer": "^10.1.0",
     "nodemon": "^3.1.14",
     "path": "^0.12.7",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "resend": "^6.37.0"
   }
 }
