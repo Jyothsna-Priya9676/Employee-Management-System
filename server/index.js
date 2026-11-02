@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 
 import connectToDatabase from "./db/db.js";
+import ensureAdminUser from "./ensureAdminUser.js";
 
 import authRouter from "./routes/auth.js";
 import employeeRouter from "./routes/employee.js";
@@ -48,6 +49,9 @@ app.use((req, res) => {
 const startServer = async () => {
     try {
         await connectToDatabase();
+
+        // Create the admin only if the account does not exist.
+        await ensureAdminUser();
 
         const PORT = process.env.PORT || 3000;
 
