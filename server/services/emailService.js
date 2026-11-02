@@ -1,43 +1,24 @@
 
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-const emailUser = process.env.EMAIL_USER;
-const emailPassword = process.env.EMAIL_APP_PASSWORD;
-
-const transporter =
-  emailUser && emailPassword
-    ? nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: emailUser,
-          pass: emailPassword.replace(/\s/g, ""),
-        },
-      })
-    : null;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function sendEmail({ to, subject, html, text }) {
-  if (!transporter) {
-    throw new Error(
-      "Email configuration is missing. Check EMAIL_USER and EMAIL_APP_PASSWORD."
-    );
-  }
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error("RESEND_API_KEY is missing");
+    }
 
-  return transporter.sendMail({
-    from: `"Smart HRMS" <${emailUser}>`,
-    to,
-    subject,
-    text,
-    html,
-  });
-}
+    const result = await resend.emails.send({
+        from: "Smart HRMS <onboarding@resend.dev>",
+        to: [to],
+        subject,
+        html,
+        text,
+    });
 
-export async function verifyEmailConnection() {
-  if (!transporter) {
-    throw new Error(
-      "Email configuration is missing. Check EMAIL_USER and EMAIL_APP_PASSWORD."
-    );
-  }
+    if (result.error) {
+        throw new Error(result.error.message);
+    }
 
-  await transporter.verify();
-  return true;
+    return result.data;
 }
