@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 import Employee from "../models/Employee.js";
 import Department from "../models/Department.js";
-
+import { sendEmail } from "../services/emailService.js";
 const validStatuses = ["Active", "Inactive"];
 
 // GET /api/employees
@@ -143,6 +143,7 @@ export const getEmployeeById = async (req, res) => {
 };
 
 // POST /api/employees
+
 export const createEmployee = async (req, res) => {
     try {
         const {
@@ -156,6 +157,7 @@ export const createEmployee = async (req, res) => {
             status
         } = req.body;
 
+        // Required field validation
         if (
             typeof name !== "string" ||
             !name.trim() ||
@@ -175,16 +177,20 @@ export const createEmployee = async (req, res) => {
         }
 
         const normalizedEmail = email.trim().toLowerCase();
-        const normalizedEmployeeId =
-            typeof employeeId === "string" ? employeeId.trim() : "";
 
-        if (normalizedEmployeeId && normalizedEmployeeId.length > 50) {
+        const normalizedEmployeeId =
+            typeof employeeId === "string"
+                ? employeeId.trim()
+                : "";
+
+        if (normalizedEmployeeId.length > 50) {
             return res.status(400).json({
                 success: false,
                 error: "Employee ID cannot exceed 50 characters"
             });
         }
 
+        // Email validation
         const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         if (!emailPattern.test(normalizedEmail)) {
@@ -194,6 +200,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Department ID validation
         if (!mongoose.isValidObjectId(department)) {
             return res.status(400).json({
                 success: false,
@@ -201,6 +208,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Salary validation
         const parsedSalary = Number(salary);
 
         if (!Number.isFinite(parsedSalary) || parsedSalary < 0) {
@@ -210,6 +218,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Status validation
         if (status && !validStatuses.includes(status)) {
             return res.status(400).json({
                 success: false,
@@ -217,6 +226,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Joining date validation
         const parsedJoiningDate = joiningDate
             ? new Date(joiningDate)
             : new Date();
@@ -228,6 +238,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Check duplicate email
         const existingEmail = await Employee.findOne({
             email: normalizedEmail
         });
@@ -239,6 +250,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Check duplicate employee ID
         if (normalizedEmployeeId) {
             const existingId = await Employee.findOne({
                 employeeId: normalizedEmployeeId
@@ -252,6 +264,7 @@ export const createEmployee = async (req, res) => {
             }
         }
 
+        // Verify department
         const departmentExists = await Department.findById(department);
 
         if (!departmentExists) {
@@ -261,6 +274,7 @@ export const createEmployee = async (req, res) => {
             });
         }
 
+        // Generate employee ID if not supplied
         const finalEmployeeId =
             normalizedEmployeeId ||
             `EMP-${new mongoose.Types.ObjectId()
@@ -268,6 +282,7 @@ export const createEmployee = async (req, res) => {
                 .slice(-8)
                 .toUpperCase()}`;
 
+        // Create employee
         const employee = await Employee.create({
             employeeId: finalEmployeeId,
             name: name.trim(),
@@ -279,15 +294,110 @@ export const createEmployee = async (req, res) => {
             status: status || "Active"
         });
 
+        // Fetch employee with department details
         const populatedEmployee = await Employee.findById(employee._id)
             .populate("department", "departmentName")
             .lean();
 
+        // Send welcome email
+        let emailSent = false;
+
+        try {
+            const departmentName =
+                populatedEmployee.department?.departmentName ||
+                "Unassigned";
+
+            await sendEmail({
+                to: populatedEmployee.email,
+                subject: "Welcome to Smart HRMS",
+
+                text: `
+Hello ${populatedEmployee.name},
+
+Welcome to our organization!
+
+Your employee record has been successfully created.
+
+Employee ID: ${populatedEmployee.employeeId}
+Designation: ${populatedEmployee.designation}
+Department: ${departmentName}
+
+Regards,
+HR Team
+Smart HRMS
+                `,
+
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+
+                        <h2 style="color: #2563eb;">
+                            Welcome to Smart HRMS!
+                        </h2>
+
+                        <p>Hello <strong>${populatedEmployee.name}</strong>,</p>
+
+                        <p>
+                            Welcome to our organization!
+                            Your employee record has been successfully created.
+                        </p>
+
+                        <div style="background: #f5f7fb; padding: 15px; border-radius: 8px;">
+
+                            <p>
+                                <strong>Employee ID:</strong>
+                                ${populatedEmployee.employeeId}
+                            </p>
+
+                            <p>
+                                <strong>Designation:</strong>
+                                ${populatedEmployee.designation}
+                            </p>
+
+                            <p>
+                                <strong>Department:</strong>
+                                ${departmentName}
+                            </p>
+
+                        </div>
+
+                        <p>
+                            We are happy to have you as part of our organization.
+                        </p>
+
+                        <p>
+                            Regards,<br />
+                            <strong>HR Team</strong><br />
+                            Smart HRMS
+                        </p>
+
+                    </div>
+                `
+            });
+
+            emailSent = true;
+
+            console.log(
+                `Welcome email sent successfully to ${populatedEmployee.email}`
+            );
+
+        } catch (emailError) {
+            console.error(
+                "Welcome email failed:",
+                emailError.message
+            );
+        }
+
+        // Return response
         return res.status(201).json({
             success: true,
-            message: "Employee created successfully",
+            message: emailSent
+                ? "Employee created successfully and welcome email sent"
+                : "Employee created successfully, but welcome email could not be sent",
+
+            emailSent,
             employee: populatedEmployee
         });
+
     } catch (error) {
         console.error("createEmployee:", error);
 
@@ -311,6 +421,7 @@ export const createEmployee = async (req, res) => {
         });
     }
 };
+;
 
 // PUT /api/employees/:id
 export const updateEmployee = async (req, res) => {
